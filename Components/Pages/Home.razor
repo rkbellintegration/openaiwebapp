@@ -1,0 +1,72 @@
+﻿@page "/"
+@rendermode InteractiveServer
+@using Azure.AI.OpenAI
+@using Azure.Identity
+@using Azure.AI.OpenAI
+@using Azure
+@using OpenAI.Chat
+@inject Microsoft.Extensions.Configuration.IConfiguration _config
+
+<h3>Azure OpenAI Chat</h3>
+<div class="mb-3 d-flex align-items-center" style="margin:auto;">
+    <input class="form-control me-2" @bind="userMessage" placeholder="Type your message..." />
+    <button class="btn btn-primary" @onclick="SendMessage">Send</button>
+</div>
+<div class="card p-3" style="margin:auto;">
+    @if (!string.IsNullOrEmpty(aiResponse))
+    {
+        <div class="alert alert-info mt-3 mb-0">@aiResponse</div>
+    }
+</div>
+
+@code {
+    private string? userMessage;
+    private string? aiResponse;
+
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(userMessage)) return;
+
+        // Initialize the Azure OpenAI client
+            // gather configuration values from environment or settings
+        var endpointStr = _config["AZURE_OPENAI_ENDPOINT"];
+        var apiKey = _config["AZURE_OPENAI_KEY"];
+        if (string.IsNullOrWhiteSpace(endpointStr) || string.IsNullOrWhiteSpace(apiKey))
+        {
+            aiResponse = "AZURE_OPENAI_ENDPOINT or AZURE_OPENAI_KEY is not configured.";
+            return;
+        }
+
+        var endpoint = new Uri(endpointStr);
+        var credential = new AzureKeyCredential(apiKey);
+
+        aiResponse = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var client = new AzureOpenAIClient(endpoint, credential);
+            var chatClient = client.GetChatClient("gpt-4o-mini");
+
+            // Create a chat completion streaming request
+            var chatUpdates = chatClient.CompleteChatStreamingAsync(
+                [
+                    new UserChatMessage(userMessage)
+                ]);
+
+            await foreach (var chatUpdate in chatUpdates)
+            {
+                // Update the UI with the streaming response
+                foreach (var contentPart in chatUpdate.ContentUpdate)
+                {
+                    aiResponse += contentPart.Text;
+                    StateHasChanged();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            aiResponse = $"Error calling OpenAI: {ex.Message}";
+        }
+    }
+}
